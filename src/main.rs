@@ -1,11 +1,9 @@
 use core::panic;
-use std::io::{stdin, Read};
-use std::ops::Deref;
-use std::process::Command;
-use csv::Reader;
-use serde::Deserialize;
+use std::{io::stdin, fs::OpenOptions};
+use csv::{Reader, Writer};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Reminder {
     id: i32,
     text: String,
@@ -21,24 +19,29 @@ impl Reminder {
     }
 }
 
-fn take_user_input() -> Result<String, std::io::Error> {
-    let mut buffer: String = String::new();
-    stdin().read_to_string(&mut buffer)?;
-    Ok(buffer)
+fn take_user_input(message: &str) -> Result<String, std::io::Error> {
+    println!("{}", message);
+    let mut input_text: String = String::new();
+    stdin().read_line(&mut input_text)?;
+    Ok(input_text.trim().to_owned())
 }
 
 // For Windows, in Linux it should be "clear"
 fn clear_console() {
-    let _ = Command::new("cls").status().unwrap();
+    print!("{}[2J", 27 as char);
 }
 
 
 // Read the csv file 'reminders.csv' at the root directory and add the reminders struct to the reminders vector
 fn read_reminders_from_csv(reminders: &mut Vec<Reminder>) -> Result<(), std::io::Error> {
-    let mut reader = match Reader::from_path("reminders.csv") {
-        Ok(r) => r,
-        Err(e) => panic!("Could not find file reminders.csv, please create it in the root directory")
-    };
+    let file = OpenOptions::new()
+        .write(true)
+        .read(true)
+        .create(true)
+        .open("reminders.csv")
+        .unwrap();
+
+    let mut reader = Reader::from_reader(file); 
 
     for result in reader.deserialize() {
         let reminder: Reminder = result?;
@@ -47,6 +50,21 @@ fn read_reminders_from_csv(reminders: &mut Vec<Reminder>) -> Result<(), std::io:
     }
 
     Ok(())
+}
+
+fn write_to_csv(reminders: &Vec<Reminder>) {
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open("reminders.csv")
+        .unwrap();
+
+    let mut writer = Writer::from_writer(file);
+
+    for reminder in reminders.iter() {
+        writer.serialize(reminder).unwrap();
+    }
+    
 }
 
 fn list_commands() {
@@ -59,7 +77,7 @@ fn list_commands() {
 }
 
 fn add_reminder(reminders: &mut Vec<Reminder>) {
-    let user_input: String = match take_user_input() {
+    let user_input: String = match take_user_input("Write your reminder:") {
         Ok(buffer) => buffer,
         Err(e) => panic!("Error: user input is invalid UTF-8: {}", e) 
     };
@@ -86,7 +104,7 @@ fn view_reminders(reminders: &Vec<Reminder>) {
 }
 
 fn delete_reminder(reminders: &mut Vec<Reminder>) -> Result<(), std::io::Error> {
-    let delete_id: i32 = match take_user_input()?.parse::<i32>() {
+    let delete_id: i32 = match take_user_input("What is the reminder id")?.parse::<i32>() {
         Ok(input) => input,
         Err(e) => panic!("Error: user input is invalid UTF-8: {}", e) 
     };
@@ -105,10 +123,7 @@ fn delete_reminder(reminders: &mut Vec<Reminder>) -> Result<(), std::io::Error> 
     Ok(())
 }
 
-fn write_to_csv(reminders: &Vec<Reminder>) {}
-
 fn main() {
-
     let mut reminders: Vec<Reminder> = Vec::new();
 
     // mutate reminders in place and check the possible errors
@@ -118,14 +133,15 @@ fn main() {
     };
 
     loop {
-        // Take the user input
-        let user_input: String = match take_user_input() {
+        // Take the user input  
+        let user_input: String = match take_user_input("Input a command:") {
             Ok(buffer) => buffer,
-            Err(e) => panic!("Error: user input is invalid UTF-8") 
+            Err(e) => panic!("Error: user input is invalid UTF-8: {}", e) 
         };
+        clear_console();
 
         // Match on the user input as a &str        
-        match user_input.as_str() {
+        match user_input.to_lowercase().as_str() {
             "quit" => break,
             "help" => list_commands(),
             "add" => add_reminder(&mut reminders),
@@ -136,12 +152,12 @@ fn main() {
                     Err(e) => panic!("Error deleting reminder: {}", e)
                 }
             },
-            _ => continue
+            _ => {
+                println!("Unrecognized command");
+                continue;
+            }
         }
-        write_to_csv(&reminders);
+        write_to_csv(&reminders);        
     }
-
-    
-    clear_console();
     println!("Thank you for using this app");
 }
