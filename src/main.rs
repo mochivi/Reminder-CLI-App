@@ -1,5 +1,6 @@
 use core::panic;
 use std::io::{stdin, Read};
+use std::ops::Deref;
 use std::process::Command;
 use csv::Reader;
 use serde::Deserialize;
@@ -11,12 +12,12 @@ struct Reminder {
 }
 
 impl Reminder {
-    fn get_text(self) -> String {
-        self.text
+    pub fn get_text(&self) -> &String {
+        &self.text
     }
 
-    fn get_id(self) -> i32 {
-        self.id
+    pub fn get_id(&self) -> &i32 {
+        &self.id
     }
 }
 
@@ -60,11 +61,18 @@ fn list_commands() {
 fn add_reminder(reminders: &mut Vec<Reminder>) {
     let user_input: String = match take_user_input() {
         Ok(buffer) => buffer,
-        Err(e) => panic!("Error: user input is invalid UTF-8") 
+        Err(e) => panic!("Error: user input is invalid UTF-8: {}", e) 
     };
+    
+    let mut max_id: i32 = 0;
+    for reminder in reminders.iter() {
+        if reminder.id > max_id {
+            max_id = reminder.id;
+        }
+    }
 
     let reminder: Reminder = Reminder {
-        id: 0, 
+        id: max_id + 1, 
         text: user_input
     };
 
@@ -73,11 +81,29 @@ fn add_reminder(reminders: &mut Vec<Reminder>) {
 
 fn view_reminders(reminders: &Vec<Reminder>) {
     for reminder in reminders.iter() {
-        println!("{}: {}", reminder.id, reminder.text)
+        println!("{}: {}", reminder.get_id(), reminder.get_text())
     }
 }
 
-fn delete_reminder(reminders: &mut Vec<Reminder>) {}
+fn delete_reminder(reminders: &mut Vec<Reminder>) -> Result<(), std::io::Error> {
+    let delete_id: i32 = match take_user_input()?.parse::<i32>() {
+        Ok(input) => input,
+        Err(e) => panic!("Error: user input is invalid UTF-8: {}", e) 
+    };
+
+    let mut remove_idx: u16 = 0;
+    for reminder in reminders.iter() {
+        let curr_id = reminder.get_id();
+        if curr_id == &delete_id {
+            break;
+        }
+        remove_idx += 1;
+    }
+
+    reminders.remove(remove_idx.into());
+
+    Ok(())
+}
 
 fn write_to_csv(reminders: &Vec<Reminder>) {}
 
@@ -104,7 +130,12 @@ fn main() {
             "help" => list_commands(),
             "add" => add_reminder(&mut reminders),
             "view" => view_reminders(&reminders),
-            "delete" => delete_reminder(&mut reminders),
+            "delete" => {
+                match delete_reminder(&mut reminders) {
+                    Ok(_) => println!("Success deleting reminder"),
+                    Err(e) => panic!("Error deleting reminder: {}", e)
+                }
+            },
             _ => continue
         }
         write_to_csv(&reminders);
